@@ -470,3 +470,80 @@ END //
 
 DELIMITER ;
  
+-- 1. TR_ActualizarStockInsumos: Actualiza automáticamente el stock de insumos después de un movimiento (entrada o salida).
+
+DELIMITER //
+
+CREATE TRIGGER TR_ActualizarStockInsumos
+AFTER INSERT ON Movimientos_Insumos
+FOR EACH ROW
+BEGIN
+    
+    IF NEW.tipo = 'Entrada' THEN
+        UPDATE Insumos 
+        SET stock = stock + NEW.cantidad
+        WHERE id_insumo = NEW.id_insumo;
+        
+   
+    ELSEIF NEW.tipo = 'Salida' THEN
+        UPDATE Insumos 
+        SET stock = stock - NEW.cantidad
+        WHERE id_insumo = NEW.id_insumo;
+    END IF;
+END //
+
+DELIMITER ;
+
+-- 2. TR_VerificarHoroMetroMaquinaria: Valida que el nuevo valor del horómetro de una máquina sea mayor al anterior.
+
+CREATE TRIGGER TR_VerificarHoroMetroMaquinaria
+BEFORE UPDATE ON Maquinaria
+FOR EACH ROW
+BEGIN
+    IF NEW.horometro <= OLD.horometro THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Error: El nuevo valor del horómetro debe ser mayor al anterior.';
+    END IF;
+END;
+
+-- 3. TR_RegistrarHistorialParcela: Actualiza el historial de uso de una parcela cuando se registra una nueva siembra.
+
+CREATE TRIGGER TR_RegistrarHistorialParcela
+AFTER INSERT ON Siembras
+FOR EACH ROW
+BEGIN
+    INSERT INTO HistorialParcela (id_parcela, fecha_evento, descripcion)
+    VALUES (
+        NEW.id_parcela, 
+        NOW(), 
+        CONCAT('Nueva siembra registrada: ', NEW.cultivo, ' - Variedad: ', NEW.variedad)
+    );
+END;
+
+-- 4. TR_AlertaStockMinimo: Genera una alerta cuando el stock de un insumo cae por debajo del mínimo establecido.
+
+CREATE TRIGGER TR_AlertaStockMinimo
+AFTER UPDATE ON Insumos
+FOR EACH ROW
+BEGIN
+    
+    IF NEW.stock_actual < NEW.stock_minimo THEN
+        INSERT INTO Alertas (id_insumo, mensaje, fecha_alerta)
+        VALUES (
+            NEW.id_insumo, 
+            CONCAT('Alerta: El insumo ', NEW.nombre, ' está por debajo del mínimo (', NEW.stock_minimo, ')'), 
+            NOW()
+        );
+    END IF;
+END;
+
+-- 5. TR_ActualizarEstadoParcelaPorCosecha: Actualiza el estado de una parcela cuando se completa una cosecha.
+
+CREATE TRIGGER TR_ActualizarEstadoParcelaPorCosecha
+AFTER INSERT ON Cosechas
+FOR EACH ROW
+BEGIN
+    UPDATE Parcelas
+    SET estado = 'Disponible'
+    WHERE id_parcela = NEW.id_parcela;
+END;
